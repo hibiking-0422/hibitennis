@@ -1,0 +1,206 @@
+<!doctype html>
+ 
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    
+    <meta name="description" content="${description}" />
+    
+  </head>
+  <body>
+    <script src="https://cdn.jsdelivr.net/gh/phinajs/phina.js@v0.2.3/build/phina.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+  </body>
+</html>
+
+<script>
+// グローバル領域に展開
+phina.globalize();
+let socket = io();
+let players = new Array();
+let balls = new Array();
+let opFlag01 = false;
+let opFlag02 = false;
+let start01 = false;
+let start02 = false;
+/*
+*メインシーン
+*/
+phina.define("MainScene", {
+    superClass: "DisplayScene",
+    init: function (option) {
+        this.superInit(option);
+
+        // 背景色
+        this.backgroundColor = "black";
+
+        // プレイヤー
+        this.player01 = RectangleShape({
+            x: 100,
+            y: this.height /2,
+            width: 20,
+            height: 200,
+            fill: "blue",
+            stroke: null
+        }).addChildTo(this);
+        this.player01.setInteractive(true);
+        this.player01.onpointstart = function() {
+          start01 = true;
+          socket.emit('startPlayer01_from_front');
+          console.log(start01);
+        };
+        players.push(this.player01);
+
+        this.player02 = RectangleShape({
+            x: this.width - 100,
+            y: this.height /2,
+            width: 20,
+            height: 200,
+            fill: "red",
+            stroke: null
+        }).addChildTo(this);
+        this.player02.setInteractive(true);
+        this.player02.onpointstart = function() {
+          start02 = true;
+          socket.emit('startPlayer02_from_front');
+          console.log(start02);
+        };
+        players.push(this.player02);
+
+        this.ball = Ball({
+          // 位置・幅・高さ指定
+          x: 320,
+          y: 480,
+          width: 5,
+          height: 5,
+        });
+        this.ball.addChildTo(this);
+        balls.push(this.ball);
+        this.ball.xflag = true;
+        this.ball.yflag = true;
+    },
+    // 更新
+    update: function (app) {
+      if(!start01 || !start02) return;
+        // タッチ・カーソルの位置を取得
+        const p = app.pointer;
+        // プレイヤーの座標を更新
+        if(opFlag01) this.player01.y = p.y;
+        else if(opFlag02)this.player02.y = p.y;
+
+        ////横
+        if(this.ball.xflag) {
+          this.ball.x += 10;
+        }
+        else this.ball.x -= 10;
+        //当たり判定
+        if(this.ball.x > this.width) this.ball.xflag = false;
+        else if(this.ball.x < 0) this.ball.xflag = true;
+        else if(this.ball.x < this.player01.x && this.ball.y > this.player01.y - (this.player01.height / 2) && this.ball.y < this.player01.y + (this.player01.height / 2)) this.ball.xflag = true;
+        else if(this.ball.x > this.player02.x && this.ball.y > this.player02.y - (this.player02.height / 2) && this.ball.y < this.player02.y + (this.player02.height / 2)) this.ball.xflag = false;
+
+        ////縦
+        if(this.ball.yflag){
+          this.ball.y += 10;
+        }
+        else this.ball.y -= 10;
+        //当たり判定
+        if(this.ball.y > this.height) this.ball.yflag = false;
+        else if(this.ball.y < 0) this.ball.yflag = true; 
+    },
+});
+
+setTimeout(() => {
+  socket.emit('joinPlayer');
+}, 100);
+socket.on('joinPlayer01', () => {
+  opFlag01 = true;
+  console.log('01');
+});
+socket.on('joinPlayer02', () => {
+  if(!opFlag01) {
+    opFlag02 = true;
+    console.log('02');
+  }
+});
+
+//相手移動
+setInterval(() => {
+  if(opFlag01) socket.emit('movePlayer01_from_front', players[0].y);
+  else if(opFlag02) socket.emit('movePlayer02_from_front', players[1].y);
+
+  //socket.emit('moveBall_from_front', balls[0]);
+}, 1.0);
+
+socket.on('movePlayer01_from_server', (player01_y) => {
+  try {
+    players[0].y = player01_y;
+  } catch(e) {
+    console.log(e.message);
+  }
+});
+
+socket.on('movePlayer02_from_server', (player02_y) => {
+  try {
+    players[1].y = player02_y;
+  } catch(e) {
+    console.log(e.message);
+  }
+});
+
+socket.on('moveBall_from_server', (ball) => {
+  try {
+    balls[0].y = ball.y;
+    balls[0].x = ball.x;
+    console.log(ball);
+  } catch(e) {
+    console.log(e.message);
+  }
+});
+
+socket.on('startPlayer01_from_server', () => {
+  try {
+    start01 = true;
+    console.log('01');
+  } catch(e) {
+    console.log(e.message);
+  }
+});
+
+socket.on('startPlayer02_from_server', () => {
+  try {
+    start02 = true;
+    console.log('02');
+  } catch(e) {
+    console.log(e.message);
+  }
+});
+
+
+phina.define('Ball', {
+  superClass: 'Shape',
+  init: function(options) {
+    this.superInit(options);
+  }
+})
+
+/*
+ * メイン処理
+ */
+phina.main(function(){
+   // アプリケーションを生成
+   const app = GameApp({
+     // MainSceneから開始
+     startLabel: "main",
+     fps: 60,
+     width: 1080,
+     height: 720,
+   });
+   // fps表示
+   //app.enableStats();
+   // 実行
+   app.run();
+});
+</script>
